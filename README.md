@@ -355,6 +355,85 @@ Durante a validação, devem ser observados:
 - processamento das mensagens pelo middleware
 - registros persistidos no banco
 
+## 14. Testes de Carga com k6
+
+Para complementar a validação funcional, foram executados testes de carga no backend da Atividade 1 com o k6, usando o endpoint `POST /telemetry`.
+
+O objetivo foi avaliar dois cenários:
+
+- comportamento em níveis progressivos de carga
+- limite operacional sob estresse, com critério de parada por SLO
+
+### 14.1 Cenário 1: teste por níveis
+
+No primeiro script, a carga foi aplicada em níveis controlados (`5`, `20` e `50` VUs), com rampa curta e validações de qualidade de serviço.
+
+Critérios utilizados:
+
+- `http_req_failed < 5%`
+- `http_req_duration p(95) < 1000 ms`
+- status HTTP `202`
+
+Resultado:
+
+- o cenário cumpriu o objetivo de validar o comportamento inicial em baixa e média carga
+- não foram observadas falhas relevantes
+- o endpoint respondeu de forma consistente com enfileiramento bem-sucedido
+
+Esse teste foi importante como baseline para confirmar estabilidade antes dos cenários de estresse.
+
+### 14.2 Cenário 2: teste de estresse e refino do limite
+
+No segundo script, a estratégia foi elevar progressivamente o número de VUs para identificar o ponto de saturação.
+
+Critérios de parada adotados (SLO):
+
+- `http_req_failed < 1%`
+- `http_req_duration p(95) < 1000 ms`
+
+Principais execuções e resultados:
+
+1. Execução até `2000` VUs:
+  - `http_req_failed = 0%`
+  - `checks = 100%`
+  - `p(95) = 889.47 ms`
+  - conclusão: cenário ainda saudável para o SLO definido.
+
+2. Execução extrema (`6000` a `9000` VUs):
+  - falhas de conexão (`connect refused`) durante o teste
+  - `http_req_failed = 2.48%`
+  - `p(95) = 12.9 s`
+  - conclusão: saturação severa, com violação de latência e disponibilidade.
+
+3. Execução de refino (até `3900` VUs):
+  - `http_req_failed = 0%`
+  - `checks = 100%`
+  - `p(95) = 3.57 s`
+  - conclusão: sem queda de disponibilidade, porém com degradação forte de desempenho.
+
+### 14.3 Interpretação dos resultados
+
+Os resultados mostram dois limites diferentes:
+
+- limite de disponibilidade: mais alto (o serviço ainda responde `202` em cargas elevadas)
+- limite de desempenho (SLO de latência): mais baixo
+
+Assim, considerando o critério de qualidade adotado (`p95 < 1s`), o backend deixa de ser considerado saudável em cargas acima da faixa validada com `2000` VUs.
+
+Em outras palavras, o gargalo observado foi primeiro de tempo de resposta e só depois, em carga extrema, de disponibilidade.
+
+### 14.4 Observação metodológica
+
+Os testes foram executados com VUs em loop (sem `sleep` no cenário de estresse), portanto a vazão (`req/s`) variou conforme latência e capacidade do ambiente. Assim, o número de VUs não equivale diretamente ao mesmo número de requisições por segundo.
+
+Para controle estrito de taxa de chegada, pode-se usar, em trabalhos futuros, o executor `constant-arrival-rate`.
+
+### 14.5 Scripts e outputs dos testes
+
+Todos os scripts de carga utilizados na Atividade 1 e seus respectivos outputs (summaries) estão organizados na pasta `test-load-atv1` deste repositório.
+
+Essa organização facilita a reprodução dos experimentos e a rastreabilidade dos resultados apresentados nesta seção.
+
 ## 15. Como Executar o Projeto
 
 ### 15.1 Subir o backend
